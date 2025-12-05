@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useToast } from "../hooks/use-toast";
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import emailjs from "@emailjs/browser";
+import { clearPendingMessages, listPendingMessages, savePendingMessage } from "../lib/pwaDatabase";
 
 // Constantes
 const SERVICE_ID = "service_lhwgzf1";
@@ -19,9 +20,33 @@ const PUBLIC_KEY = "9XQvluXO5Lui5xZWc";
 export const ContactSection = () => {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const form = useRef(null);
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    const syncOfflineMessages = async () => {
+      const pendingMessages = await listPendingMessages();
+      if (!pendingMessages.length || !navigator.onLine) return;
+      setIsSyncing(true);
+
+      for (const message of pendingMessages) {
+        await emailjs.send(SERVICE_ID, TEMPLATE_ID, message, { publicKey: PUBLIC_KEY });
+      }
+      await clearPendingMessages();
+      toast({
+        title: "Mensajes sincronizados",
+        description: "Se enviaron los formularios guardados sin conexión"
+      });
+      setIsSyncing(false);
+    };
+
+    window.addEventListener("online", syncOfflineMessages);
+    syncOfflineMessages();
+
+    return () => window.removeEventListener("online", syncOfflineMessages);
+  }, [toast]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
 
@@ -30,27 +55,26 @@ export const ContactSection = () => {
       return;
     }
 
-    emailjs
-      .sendForm(SERVICE_ID, TEMPLATE_ID, form.current, PUBLIC_KEY)
-      .then(() => {
-        toast({
-          title: "Message sent!",
-          description:
-            "Thank you for your message. I'll get back to you soon.",
-        });
-        form.current.reset();
-      })
-      .catch(() => {
-        toast({
-          title: "Error",
-          description:
-            "There was an error sending your message. Please try again.",
-          variant: "destructive",
-        });
-      })
-      .finally(() => {
-        setIsSubmitting(false);
+    const formData = new FormData(form.current);
+    const payload = Object.fromEntries(formData.entries());
+
+    try {
+      await emailjs.send(SERVICE_ID, TEMPLATE_ID, payload, { publicKey: PUBLIC_KEY });
+      toast({
+        title: "Message sent!",
+        description:
+          "Thank you for your message. I'll get back to you soon.",
       });
+      form.current.reset();
+    } catch (error) {
+      await savePendingMessage(payload);
+      toast({
+        title: "Guardado para enviar",
+        description: "No hay conexión. Enviaremos el mensaje en cuanto vuelvas a estar en línea.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -64,6 +88,9 @@ export const ContactSection = () => {
           <h2 className="text-3xl font-bold text-[#101828] sm:text-4xl md:text-5xl">
             Contact Us
           </h2>
+          {isSyncing && (
+            <p className="mt-2 text-sm text-[#3D9034]">Sincronizando mensajes pendientes...</p>
+          )}
         </div>
 
         {/* GRID PRINCIPAL */}
@@ -199,34 +226,6 @@ export const ContactSection = () => {
                     className="h-full w-full object-contain"
                   />
                 </div>
-              </div>
-
-              {/* Redes opcionales */}
-              <div className="mt-6 flex justify-center gap-4 text-[#475467]">
-                <a
-                  href="https://www.linkedin.com/in/alvaro-zermeño-"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="LinkedIn"
-                >
-                  <Linkedin className="h-5 w-5" />
-                </a>
-                <a
-                  href="https://github.com/elIgnorante"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="GitHub"
-                >
-                  <Github className="h-5 w-5" />
-                </a>
-                <a
-                  href="https://www.instagram.com/alvaro_jzg?igsh=MTRpNG51cnU4NzJoYg=="
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Instagram"
-                >
-                  <Instagram className="h-5 w-5" />
-                </a>
               </div>
             </div>
           </div>
